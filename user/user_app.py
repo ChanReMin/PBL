@@ -7,7 +7,7 @@ from datetime import datetime
 app = Flask(__name__)
 app.config['SECRET KEY'] = 'chanremin'
 app.config['SESSION_TYPE']='filesystem'
-Session(app)
+session(app)
 mysql_config = {
     'host': 'localhost',
     'user': 'root',
