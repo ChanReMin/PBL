@@ -2,9 +2,8 @@ from flask import Flask, request, jsonify
 import mysql.connector
 from models import Fruit
 
-from flask_cors import CORS
 app = Flask(__name__)
-CORS(app)
+
 mysql_config = {
     'host': 'localhost',
     'user': 'root',
@@ -19,7 +18,6 @@ def add_fruit():
     data = request.get_json()
     name = data['name']
     description = data.get('description', '')
-    sold = data.get('sold', 0)
     exist = data.get('exist', 0)
     image = data.get('image', '')
     price = data.get('price', 0.0)
@@ -33,8 +31,8 @@ def add_fruit():
             cursor.close()
             return jsonify({"message": "Fruit already exists. Please add a different one."})
         cursor.execute(
-            "INSERT INTO fruits (name, description, sold, exist, image, price) VALUES (%s, %s, %s, %s, %s, %s)",
-            (name, description, sold, exist, image, price))
+            "INSERT INTO fruits (name, description, exist, image, price) VALUES (%s, %s, %s, %s, %s, %s)",
+            (name, description, exist, image, price))
         mysql.commit()
         cursor.close()
         return jsonify({"message": "Fruit added successfully"}), 201
@@ -82,14 +80,13 @@ def update_fruit(fruit_id):
         data = request.get_json()
         new_name = data['name']
         new_description = data['description']
-        new_sold = data['sold']
         new_exist = data['exist']
         new_image = data['image']
         new_price = data['price']
 
         cursor.execute(
-            "UPDATE fruits SET name = %s, description = %s, sold = %s, exist = %s, image = %s, price = %s WHERE id = %s",
-            (new_name, new_description, new_sold, new_exist, new_image, new_price, fruit_id))
+            "UPDATE fruits SET name = %s, description = %s,  exist = %s, image = %s, price = %s WHERE id = %s",
+            (new_name, new_description, new_exist, new_image, new_price, fruit_id))
         mysql.commit()
         cursor.close()
         return jsonify({"message": "Fruit updated successfully"})

@@ -7,12 +7,12 @@ from datetime import datetime
 app = Flask(__name__)
 app.config['SECRET KEY'] = 'chanremin'
 app.config['SESSION_TYPE']='filesystem'
-session(app)
+Session(app)
 mysql_config = {
     'host': 'localhost',
     'user': 'root',
     'password': '',
-    'database': 'users'
+    'database': 'fruits'
 }
 mysql = mysql.connector.connect(**mysql_config)
 cursor = mysql.cursor()
@@ -122,9 +122,11 @@ def logout():
 def update():
     data = request.get_json()
     email = data.get('email','')
+
     password = data['password']
     salt = bcrypt.gensalt()
     hashed_password = bcrypt.hashpw(password.encode('utf-8'), salt)
+
     name = data.get('name','')
     phone = data.get('phone','')
     address = data.get('address','')
