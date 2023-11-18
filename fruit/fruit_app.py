@@ -31,7 +31,7 @@ def add_fruit():
             cursor.close()
             return jsonify({"message": "Fruit already exists. Please add a different one."})
         cursor.execute(
-            "INSERT INTO fruits (name, description, exist, image, price) VALUES (%s, %s, %s, %s, %s, %s)",
+            "INSERT INTO fruits (name, description, exist, image, price) VALUES (%s, %s, %s, %s, %s)",
             (name, description, exist, image, price))
         mysql.commit()
         cursor.close()
