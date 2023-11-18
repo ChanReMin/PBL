@@ -1,10 +1,12 @@
 from flask import Flask,request,jsonify,session
 import mysql.connector
 from user_model import user
+from flask_cors import CORS
 import bcrypt
 from flask_session import Session
 from datetime import datetime
 app = Flask(__name__)
+CORS(app)
 app.config['SECRET KEY'] = 'chanremin'
 app.config['SESSION_TYPE']='filesystem'
 Session(app)
