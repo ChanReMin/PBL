@@ -1,6 +1,5 @@
 from flask import Flask, request, jsonify
 import mysql.connector
-from models import Fruit
 from flask_cors import CORS
 app = Flask(__name__)
 CORS(app)
@@ -31,7 +30,7 @@ def add_fruit():
             cursor.close()
             return jsonify({"message": "Fruit already exists. Please add a different one."})
         cursor.execute(
-            "INSERT INTO fruits (name, description, exist, image, price) VALUES (%s, %s, %s, %s, %s)",
+            "INSERT INTO fruits (name, description, exist, image, price) VALUES (%s, %s, %s, %s, %s, %s)",
             (name, description, exist, image, price))
         mysql.commit()
         cursor.close()

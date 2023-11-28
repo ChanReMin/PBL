@@ -1,6 +1,5 @@
 from flask import Flask,request,jsonify,session
 import mysql.connector
-from user_model import user
 from flask_cors import CORS
 import bcrypt
 from flask_session import Session
@@ -146,9 +145,11 @@ def logout():
 def update():
     data = request.get_json()
     email = data.get('email','')
+
     password = data['password']
     salt = bcrypt.gensalt()
     hashed_password = bcrypt.hashpw(password.encode('utf-8'), salt)
+
     name = data.get('name','')
     phone = data.get('phone','')
     address = data.get('address','')
