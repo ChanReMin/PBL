@@ -1,6 +1,5 @@
 from flask import Flask,request,jsonify,session
 import mysql.connector
-from user_model import user
 from flask_cors import CORS
 import bcrypt
 from flask_session import Session
