@@ -6,12 +6,12 @@ from flask_cors import CORS
 import bcrypt
 import uuid
 from werkzeug.security import generate_password_hash, check_password_hash
-import jwt
-# from flask_session import Session
+
+from flask_session import Session
 from functools import wraps
 from datetime import datetime
 app = Flask(__name__)
-# CORS(app)
+CORS(app)
 app.config['SECRET_KEY'] = 'chanremin'
 app.config['SESSION_TYPE']='filesystem'
 # Session(app)
@@ -285,30 +285,53 @@ def add():
 
 @app.route('/Login',methods=['POST'])
 def login():
-    data=request.get_json()
+
+    data = request.get_json()
+
     email = data['email']
+
     password = data['password']
+
     try:
+
         if 'logged_in' in session and session['logged_in']:
+
             return jsonify(message="You are already logged in")
+
         cursor = mysql.cursor(dictionary=True)
+
         cursor.execute("SELECT * FROM users WHERE email = %s", (email,))
+
         existing_user = cursor.fetchone()
-        if existing_user==None:
+
+        if existing_user == None:
+
             return jsonify(message="Cannot find email")
+
         user_id = existing_user['ID']
-        existing_password=existing_user['password']
 
+        existing_password = existing_user['password']
 
-        if existing_user and bcrypt.checkpw(password.encode('utf-8'),existing_password.encode('utf-8')):
+        if existing_user and bcrypt.checkpw(password.encode('utf-8'), existing_password.encode('utf-8')):
+
             session['logged_in'] = True
-            session['id'] = user_id;
-            return jsonify(message='login sucessfully;current id '+session['id']),201
+
+            session['id'] = user_id
+
+            role = existing_user['Admin']
+
+            session['Admin'] = role
+
+            return jsonify(message='login sucessfully; current id ' + session['id'], role=session['Admin']), 201
 
         else:
-            return jsonify(message="Password incorrect"),201
+
+            return jsonify(message="Password incorrect"), 201
+
     except Exception as e:
-        return jsonify({"error":str(e)})
+
+        return jsonify({"error": str(e)})
+
 
 @app.route('/view',methods=['GET'])
 def view():

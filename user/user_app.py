@@ -102,11 +102,11 @@ def login():
 
             session['id'] = user_id
 
-            role = existing_user['role']
+            role = existing_user['Admin']
 
-            session['role'] = role
+            session['Admin'] = role
 
-            return jsonify(message='login sucessfully; current id ' + session['id'], role=session['role']), 201
+            return jsonify(message='login sucessfully; current id ' + session['id'], role=session['Admin']), 201
 
         else:
 
