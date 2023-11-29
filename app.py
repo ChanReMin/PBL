@@ -9,7 +9,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 
 from flask_session import Session
 from functools import wraps
-from datetime import datetime
+from datetime import datetime,date
 app = Flask(__name__)
 CORS(app)
 app.config['SECRET_KEY'] = 'chanremin'
@@ -23,6 +23,8 @@ mysql_config = {
 }
 mysql = mysql.connector.connect(**mysql_config)
 cursor = mysql.cursor()
+
+#fruit route
 @app.route('/addFruit', methods=['POST'])
 def add_fruit():
     data = request.get_json()
@@ -148,7 +150,7 @@ def calculate_total_price():
         cursor = mysql.cursor(dictionary=True)
         data = request.get_json()
         total_price = 0
-        weight_by_id = {}  # Dictionary to store total weight by id
+        weight_by_id = {}
 
         for item in data:
             fruit_id = item["id"]
@@ -160,12 +162,9 @@ def calculate_total_price():
                 weight_by_id[fruit_id] = weight_kg
 
         for fruit_id, total_weight in weight_by_id.items():
-            # Query the price from the database based on the fruit_id
             query = "SELECT price FROM fruits WHERE id = %s"
             cursor.execute(query, (fruit_id,))
             price_data = cursor.fetchone()
-
-
             if price_data:
                 price = price_data['price']
                 cost = price * total_weight
@@ -193,42 +192,76 @@ def search_fruit(fruit_name):
 @app.route('/bill',methods=['POST'])
 def bill():
     try:
-        cursor = mysql.cursor(dictionary=True)
-        data = request.get_json()
-        total_price = 0
-        weight_by_id = {}  # Dictionary to store total weight by id
-        fruit_costs = []  # List to store fruit names and costs
+        if 'logged_in' in session and session['logged_in']:
+            cursor = mysql.cursor(dictionary=True)
+            data = request.get_json()
+            total_price = 0
+            weight_by_id = {}
+            fruit_costs = []
+            user_id = session['id']
+            bill_date = date.today()
 
-        for item in data:
-            fruit_id = item["id"]
-            weight_kg = item["weight"]
+            cursor.execute("INSERT INTO bill (Date,user_id) VALUES (%s, %s)",(bill_date, user_id))
+            mysql.commit()
+            # cursor.close()
+            cursor.execute("SELECT MAX(bill_id) as max_id from bill")
+            max_id = cursor.fetchone()
+            bill_id = max_id['max_id']
+            for item in data:
+                fruit_id = item["id"]
+                weight_kg = item["weight"]
 
-            if fruit_id in weight_by_id:
-                weight_by_id[fruit_id] += weight_kg
-            else:
-                weight_by_id[fruit_id] = weight_kg
+                if fruit_id in weight_by_id:
+                    weight_by_id[fruit_id] += weight_kg
+                else:
+                    weight_by_id[fruit_id] = weight_kg
 
-        for fruit_id, total_weight in weight_by_id.items():
-            # Query the price and name from the database based on the fruit_id
-            query = "SELECT price, name FROM fruits WHERE id = %s"
-            cursor.execute(query, (fruit_id,))
-            fruit_data = cursor.fetchone()
+            for fruit_id, total_weight in weight_by_id.items():
+                cursor = mysql.cursor(dictionary=True)
+                cursor.execute("SELECT price, name FROM fruits WHERE id = %s", (fruit_id,))
+                fruit_data = cursor.fetchone()
 
-            if fruit_data:
-                price = fruit_data['price']
-                cost = price * total_weight
-                rounded_cost = round(cost, 5)
-                total_price += cost
+                if fruit_data:
+                    price = fruit_data['price']
+                    cost = price * total_weight
+                    rounded_cost = round(cost, 5)
+                    total_price += cost
+                    fruit_name = fruit_data['name']
+                    fruit_costs.append({'name': fruit_name, 'cost': rounded_cost,'total weight':round(total_weight, 5),'price':price})
+                    cursor.execute("INSERT INTO bill_detail (bill_id, fruit_id, weight) VALUES (%s, %s, %s)",
+                               (bill_id, fruit_id, total_weight))
 
-                fruit_name = fruit_data['name']
-                fruit_costs.append({'name': fruit_name, 'cost': rounded_cost,'total weight':round(total_weight,5),'price':price})
+                mysql.commit()
+                cursor.close()
+            # mysql.close()
 
-        cursor.close()
-        # mysql.close()
-
-        return jsonify(total_price=total_price, fruit_costs=fruit_costs)
+            return jsonify(total_price=total_price, fruit_costs=fruit_costs)
+        else:
+            return jsonify(message="Please login")
     except Exception as e:
         return jsonify(error=str(e)), 400
+@app.route('/ViewBill/<int:bill_id>',methods=['GET'])
+def view_bill(bill_id):
+    try:
+        cursor = mysql.cursor(dictionary=True)
+        query="""SELECT bill.Date,bill.user_id,users.name,bill_detail.weight,fruits.price,fruits.name 
+        FROM bill 
+        JOIN users 
+        ON bill.user_id = users.ID 
+        JOIN bill_detail 
+        ON bill.bill_id = bill_detail.bill_id 
+        JOIN fruits 
+        ON bill_detail.fruit_id = fruits.ID  
+        WHERE bill_detail.bill_id = %s"""
+        cursor.execute(query, (bill_id,))
+        bill = cursor.fetchall()
+        if bill is None:
+            cursor.close()
+            return jsonify({"message": "Bill not found"}), 404
+        cursor.close()
+        return jsonify(bill)
+    except Exception as e:
+        return jsonify(error=str(e)), 500
 
 #user_route
 @app.route('/Register', methods=['POST'])
@@ -332,7 +365,6 @@ def login():
 
         return jsonify({"error": str(e)})
 
-
 @app.route('/view',methods=['GET'])
 def view():
     try:
@@ -340,8 +372,8 @@ def view():
             cursor = mysql.cursor(dictionary=True)
             cursor.execute("SELECT * FROM users WHERE ID = %s",(session['id'],))
             user = cursor.fetchone()
-            return jsonify(user)
             cursor.close()
+            return jsonify(user)
         else:
             return jsonify(message="Please login")
     except Exception as e:
@@ -357,22 +389,21 @@ def logout():
             return jsonify(message='Please login first')
     except Exception as e:
         return jsonify(error=str(e)), 400
-
 @app.route('/update',methods=['POST'])
 def update():
     data = request.get_json()
-    email = data.get('email','')
+    email = data.get('email', '')
 
     password = data['password']
     salt = bcrypt.gensalt()
     hashed_password = bcrypt.hashpw(password.encode('utf-8'), salt)
 
-    name = data.get('name','')
-    phone = data.get('phone','')
-    address = data.get('address','')
-    birth = data.get('birth','')
-    sex = data.get('sex','')
-    username = data.get('username','')
+    name = data.get('name', '')
+    phone = data.get('phone', '')
+    address = data.get('address', '')
+    birth = data.get('birth', '')
+    sex = data.get('sex', '')
+    username = data.get('username', '')
 
     try:
         birthdate = datetime.strptime(birth, "%Y-%m-%d").date()
@@ -451,5 +482,6 @@ def check_role(user):
             return True
     except Exception as e:
         return jsonify(error=str(e)), 400
+
 if __name__ == '__main__':
     app.run(debug=False)
