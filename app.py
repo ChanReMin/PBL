@@ -13,7 +13,7 @@ from datetime import datetime,date
 app = Flask(__name__)
 CORS(app)
 app.config['SECRET_KEY'] = 'chanremin'
-app.config['SESSION_TYPE']='filesystem'
+app.config['SESSION_TYPE'] = 'filesystem'
 # Session(app)
 mysql_config = {
     'host': 'localhost',
@@ -24,7 +24,7 @@ mysql_config = {
 mysql = mysql.connector.connect(**mysql_config)
 cursor = mysql.cursor()
 
-#fruit route
+# fruit route
 @app.route('/addFruit', methods=['POST'])
 def add_fruit():
     data = request.get_json()
@@ -201,12 +201,16 @@ def bill():
             user_id = session['id']
             bill_date = date.today()
 
-            cursor.execute("INSERT INTO bill (Date,user_id) VALUES (%s, %s)",(bill_date, user_id))
-            mysql.commit()
+
+
             # cursor.close()
             cursor.execute("SELECT MAX(bill_id) as max_id from bill")
             max_id = cursor.fetchone()
-            bill_id = max_id['max_id']
+            if not max_id['max_id']:
+                bill_id = 1
+            else:
+                bill_id = max_id['max_id']
+                bill_id += 1
             for item in data:
                 fruit_id = item["id"]
                 weight_kg = item["weight"]
@@ -228,13 +232,13 @@ def bill():
                     total_price += cost
                     fruit_name = fruit_data['name']
                     fruit_costs.append({'name': fruit_name, 'cost': rounded_cost,'total weight':round(total_weight, 5),'price':price})
-                    cursor.execute("INSERT INTO bill_detail (bill_id, fruit_id, weight) VALUES (%s, %s, %s)",
-                               (bill_id, fruit_id, total_weight))
+                    cursor.execute("INSERT INTO bill_detail (bill_id, fruit_id, weight,price) VALUES (%s, %s, %s, %s)",
+                               (bill_id, fruit_id, total_weight,price))
 
                 mysql.commit()
-                cursor.close()
             # mysql.close()
-
+            cursor.execute("INSERT INTO bill (Date,user_id,total_cost) VALUES (%s, %s,%s)", (bill_date, user_id,total_price))
+            mysql.commit()
             return jsonify(total_price=total_price, fruit_costs=fruit_costs)
         else:
             return jsonify(message="Please login")
