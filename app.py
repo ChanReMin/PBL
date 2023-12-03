@@ -14,7 +14,6 @@ app = Flask(__name__)
 CORS(app)
 app.config['SECRET_KEY'] = 'chanremin'
 app.config['SESSION_TYPE'] = 'filesystem'
-# Session(app)
 mysql_config = {
     'host': 'localhost',
     'user': 'root',
@@ -200,12 +199,11 @@ def bill():
             fruit_costs = []
             user_id = session['id']
             bill_date = date.today()
-
-
-
+            fruit_out = []
             # cursor.close()
             cursor.execute("SELECT MAX(bill_id) as max_id from bill")
             max_id = cursor.fetchone()
+            print(max_id['max_id'])
             if not max_id['max_id']:
                 bill_id = 1
             else:
@@ -223,21 +221,27 @@ def bill():
             for fruit_id, total_weight in weight_by_id.items():
                 cursor = mysql.cursor(dictionary=True)
                 cursor.execute("SELECT price, name FROM fruits WHERE id = %s", (fruit_id,))
+                # cursor.execute("SELECT price, name, exist FROM fruits WHERE id = %s", (fruit_id,))
                 fruit_data = cursor.fetchone()
 
                 if fruit_data:
                     price = fruit_data['price']
+                    # if total_weight > fruit_data['exist']:
+                    #     # fruit_out.append({'name':fruit_data['name']})
+                    #     return jsonify(message="fruit name:"+fruit_data['name']+" Out of stock")
+                    # else:
+                    # fruit_data['exist']-=total_weight
                     cost = price * total_weight
                     rounded_cost = round(cost, 5)
                     total_price += cost
                     fruit_name = fruit_data['name']
                     fruit_costs.append({'name': fruit_name, 'cost': rounded_cost,'total weight':round(total_weight, 5),'price':price})
                     cursor.execute("INSERT INTO bill_detail (bill_id, fruit_id, weight,price) VALUES (%s, %s, %s, %s)",
-                               (bill_id, fruit_id, total_weight,price))
+                                   (bill_id, fruit_id, total_weight,price))
 
                 mysql.commit()
             # mysql.close()
-            cursor.execute("INSERT INTO bill (Date,user_id,total_cost) VALUES (%s, %s,%s)", (bill_date, user_id,total_price))
+            cursor.execute("INSERT INTO bill (bill_id,Date,user_id,total_cost) VALUES (%s, %s,%s,%s)", (bill_id,bill_date, user_id,total_price))
             mysql.commit()
             return jsonify(total_price=total_price, fruit_costs=fruit_costs)
         else:
@@ -248,7 +252,8 @@ def bill():
 def view_bill(bill_id):
     try:
         cursor = mysql.cursor(dictionary=True)
-        query="""SELECT bill.Date,bill.user_id,users.name,bill_detail.weight,fruits.price,fruits.name 
+        query="""
+        SELECT bill.Date,bill.user_id,users.name,bill_detail.weight,fruits.price,fruits.name 
         FROM bill 
         JOIN users 
         ON bill.user_id = users.ID 
@@ -259,7 +264,7 @@ def view_bill(bill_id):
         WHERE bill_detail.bill_id = %s"""
         cursor.execute(query, (bill_id,))
         bill = cursor.fetchall()
-        if bill is None:
+        if not bill:
             cursor.close()
             return jsonify({"message": "Bill not found"}), 404
         cursor.close()
@@ -267,6 +272,14 @@ def view_bill(bill_id):
     except Exception as e:
         return jsonify(error=str(e)), 500
 
+@app.route('/Sales/',methods=['GET'])
+def sales():
+    try:
+        cursor = mysql.cursor(dictionary=True)
+        query = ""
+
+    except Exception as e:
+        return jsonify(error=str(e)), 500
 #user_route
 @app.route('/Register', methods=['POST'])
 def add():
