@@ -371,11 +371,10 @@ def login():
             role = existing_user['Admin']
 
             session['Admin'] = role
-
-            return jsonify(message='login sucessfully; current id ' + session['id'], role=session['Admin']), 201
-
+            response = jsonify(message='Login successfully', user_id=session['id'], role=session['Admin'])
+            # response.headers['Set-session'] = session.sid  # Thêm session ID vào header
+            return response
         else:
-
             return jsonify(message="Password incorrect"), 201
 
     except Exception as e:
@@ -501,4 +500,5 @@ def check_role(user):
         return jsonify(error=str(e)), 400
 
 if __name__ == '__main__':
-    app.run(debug=False)
+    from waitress import serve
+    serve(app, host="0.0.0.0", port=8080)
