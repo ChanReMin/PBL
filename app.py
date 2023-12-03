@@ -275,9 +275,20 @@ def view_bill(bill_id):
 @app.route('/Sales/',methods=['GET'])
 def sales():
     try:
+        fruit_sales = []
         cursor = mysql.cursor(dictionary=True)
-        query = ""
-
+        cursor.execute("""SELECT name, fruit_id AS fruit_id , SUM(weight*bill_detail.price) AS sales FROM bill_detail JOIN fruits
+                    WHERE fruits.ID = bill_detail.fruit_id
+                    GROUP BY fruit_id
+                    """)
+        rows = cursor.fetchall()
+        cursor.close()
+        for row in rows:
+            name = row['name']
+            fruit_id = row['fruit_id']
+            sales = row['sales']
+            fruit_sales.append({"Name": name, "ID": fruit_id, "sales": sales})
+        return (fruit_sales)
     except Exception as e:
         return jsonify(error=str(e)), 500
 #user_route
