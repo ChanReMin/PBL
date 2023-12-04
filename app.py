@@ -6,14 +6,16 @@ from flask_cors import CORS
 import bcrypt
 import uuid
 from werkzeug.security import generate_password_hash, check_password_hash
+from flask_jwt_extended import JWTManager, jwt_required, get_jwt_identity
 
-from flask_session import Session
+from flask_jwt_extended import *
 from functools import wraps
 from datetime import datetime,date
 app = Flask(__name__)
 CORS(app)
 app.config['SECRET_KEY'] = 'chanremin'
 app.config['SESSION_TYPE'] = 'filesystem'
+app.config['JWT_SECRET_KEY'] = 'chanremin'
 mysql_config = {
     'host': 'localhost',
     'user': 'root',
@@ -22,9 +24,11 @@ mysql_config = {
 }
 mysql = mysql.connector.connect(**mysql_config)
 cursor = mysql.cursor()
+jwt = JWTManager(app)
 
 # fruit route
 @app.route('/addFruit', methods=['POST'])
+@jwt_required()
 def add_fruit():
     data = request.get_json()
     name = data['name']
@@ -34,30 +38,26 @@ def add_fruit():
     price = data.get('price', 0.0)
 
     try:
-        if 'logged_in' in session and session['logged_in']:
+        identity = get_jwt_identity()
+        if check_role(user):
             cursor = mysql.cursor(dictionary=True)
-            cursor.execute("SELECT * FROM users WHERE ID = %s", (session['id'],))
-            user = cursor.fetchone()
-            if check_role(user):
-                cursor = mysql.cursor(dictionary=True)
-                cursor.execute("SELECT id FROM fruits WHERE name = %s", (name,))
-                existing_fruit = cursor.fetchone()
-                if existing_fruit:
-                    cursor.close()
-                    return jsonify({"message": "Fruit already exists. Please add a different one."})
-                cursor.execute(
-                    "INSERT INTO fruits (name, description, exist, image, price) VALUES (%s, %s, %s, %s, %s)",
-                    (name, description, exist, image, price))
-                mysql.commit()
+            cursor.execute("SELECT id FROM fruits WHERE name = %s", (name,))
+            existing_fruit = cursor.fetchone()
+            if existing_fruit:
                 cursor.close()
-                return jsonify({"message": "Fruit added successfully"}), 201
-            else:
-                return jsonify(message="Invalid route")
+                return jsonify({"message": "Fruit already exists. Please add a different one."})
+            cursor.execute(
+                "INSERT INTO fruits (name, description, exist, image, price) VALUES (%s, %s, %s, %s, %s)",
+                (name, description, exist, image, price))
+            mysql.commit()
+            cursor.close()
+            return jsonify({"message": "Fruit added successfully"}), 201
         else:
-            return jsonify(message="Please login")
+            return jsonify(message="Invalid route")
     except Exception as e:
         return jsonify({"error": str(e)})
 @app.route('/allFruits', methods=['GET'])
+@jwt_required()
 def show_fruits():
     try:
         cursor = mysql.cursor(dictionary=True)
@@ -68,36 +68,34 @@ def show_fruits():
     except Exception as e:
         return jsonify({"error": str(e)})
 @app.route('/deleteFruit/<int:fruit_id>', methods=['DELETE'])
+@jwt_required()
 def delete_fruit(fruit_id):
     try:
-        if 'logged_in' in session and session['logged_in']:
+        identity = get_jwt_identity()
+        if check_role(identity):
             cursor = mysql.cursor(dictionary=True)
-            cursor.execute("SELECT * FROM users WHERE ID = %s", (session['id'],))
-            user = cursor.fetchone()
-            if check_role(user):
-                cursor = mysql.cursor(dictionary=True)
-                cursor.execute("SELECT * FROM fruits WHERE id = %s", (fruit_id,))
-                fruit = cursor.fetchone()
+            cursor.execute("SELECT * FROM fruits WHERE id = %s", (fruit_id,))
+            fruit = cursor.fetchone()
 
-                if fruit is None:
-                    cursor.close()
-                    return jsonify({"message": "Fruit not found"}), 404
-
-                # If the fruit exists, execute a DELETE query to remove it
-                cursor.execute("DELETE FROM fruits WHERE id = %s", (fruit_id,))
-                mysql.commit()
+            if fruit is None:
                 cursor.close()
-                return jsonify({"message": "Fruit deleted successfully"}), 200
-            else:
-                return jsonify(message="Invalid route")
+                return jsonify({"message": "Fruit not found"}), 404
+
+            # If the fruit exists, execute a DELETE query to remove it
+            cursor.execute("DELETE FROM fruits WHERE id = %s", (fruit_id,))
+            mysql.commit()
+            cursor.close()
+            return jsonify({"message": "Fruit deleted successfully"}), 200
         else:
-            return jsonify(message="Please login")
+            return jsonify(message="Invalid route")
     except Exception as e:
         return jsonify({"error": str(e)})
 @app.route('/updateFruit/<int:fruit_id>', methods=['PUT'])
+@jwt_required()
 def update_fruit(fruit_id):
     try:
-        if 'logged_in' in session and session['logged_in']:
+        identity = get_jwt_identity()
+        if check_role(identity):
             cursor = mysql.cursor(dictionary=True)
             cursor.execute("SELECT * FROM users WHERE ID = %s", (session['id'],))
             user = cursor.fetchone()
@@ -123,13 +121,12 @@ def update_fruit(fruit_id):
                 mysql.commit()
                 cursor.close()
                 return jsonify({"message": "Fruit updated successfully"})
-            else:
-                return jsonify(message="Invalid route")
         else:
-            return jsonify(message="Please login")
+            return jsonify(message="Invalid route")
     except Exception as e:
         return jsonify({"error": str(e)})
 @app.route('/viewFruit/<int:fruit_id>', methods=['GET'])
+@jwt_required()
 def view_fruit(fruit_id):
     try:
         cursor = mysql.cursor(dictionary=True)
@@ -176,6 +173,7 @@ def calculate_total_price():
     except Exception as e:
         return jsonify(error=str(e)), 400
 @app.route('/searchFruit/<string:fruit_name>',methods=['GET'])
+@jwt_required()
 def search_fruit(fruit_name):
     try:
         cursor = mysql.cursor(dictionary=True)
@@ -189,66 +187,66 @@ def search_fruit(fruit_name):
     except Exception as e:
         return jsonify(error=str(e)),500
 @app.route('/bill',methods=['POST'])
+@jwt_required()
 def bill():
     try:
-        if 'logged_in' in session and session['logged_in']:
-            cursor = mysql.cursor(dictionary=True)
-            data = request.get_json()
-            total_price = 0
-            weight_by_id = {}
-            fruit_costs = []
-            user_id = session['id']
-            bill_date = date.today()
-            fruit_out = []
-            # cursor.close()
-            cursor.execute("SELECT MAX(bill_id) as max_id from bill")
-            max_id = cursor.fetchone()
-            print(max_id['max_id'])
-            if not max_id['max_id']:
-                bill_id = 1
-            else:
-                bill_id = max_id['max_id']
-                bill_id += 1
-            for item in data:
-                fruit_id = item["id"]
-                weight_kg = item["weight"]
-
-                if fruit_id in weight_by_id:
-                    weight_by_id[fruit_id] += weight_kg
-                else:
-                    weight_by_id[fruit_id] = weight_kg
-
-            for fruit_id, total_weight in weight_by_id.items():
-                cursor = mysql.cursor(dictionary=True)
-                cursor.execute("SELECT price, name FROM fruits WHERE id = %s", (fruit_id,))
-                # cursor.execute("SELECT price, name, exist FROM fruits WHERE id = %s", (fruit_id,))
-                fruit_data = cursor.fetchone()
-
-                if fruit_data:
-                    price = fruit_data['price']
-                    # if total_weight > fruit_data['exist']:
-                    #     # fruit_out.append({'name':fruit_data['name']})
-                    #     return jsonify(message="fruit name:"+fruit_data['name']+" Out of stock")
-                    # else:
-                    # fruit_data['exist']-=total_weight
-                    cost = price * total_weight
-                    rounded_cost = round(cost, 5)
-                    total_price += cost
-                    fruit_name = fruit_data['name']
-                    fruit_costs.append({'name': fruit_name, 'cost': rounded_cost,'total weight':round(total_weight, 5),'price':price})
-                    cursor.execute("INSERT INTO bill_detail (bill_id, fruit_id, weight,price) VALUES (%s, %s, %s, %s)",
-                                   (bill_id, fruit_id, total_weight,price))
-
-                mysql.commit()
-            # mysql.close()
-            cursor.execute("INSERT INTO bill (bill_id,Date,user_id,total_cost) VALUES (%s, %s,%s,%s)", (bill_id,bill_date, user_id,total_price))
-            mysql.commit()
-            return jsonify(total_price=total_price, fruit_costs=fruit_costs)
+        identity=get_jwt_identity()
+        cursor = mysql.cursor(dictionary=True)
+        data = request.get_json()
+        total_price = 0
+        weight_by_id = {}
+        fruit_costs = []
+        user_id = identity
+        bill_date = date.today()
+        fruit_out = []
+        # cursor.close()
+        cursor.execute("SELECT MAX(bill_id) as max_id from bill")
+        max_id = cursor.fetchone()
+        print(max_id['max_id'])
+        if not max_id['max_id']:
+            bill_id = 1
         else:
-            return jsonify(message="Please login")
+            bill_id = max_id['max_id']
+            bill_id += 1
+        for item in data:
+            fruit_id = item['id']
+            weight_kg = item['weight']
+
+            if fruit_id in weight_by_id:
+                weight_by_id[fruit_id] += weight_kg
+            else:
+                weight_by_id[fruit_id] = weight_kg
+
+        for fruit_id, total_weight in weight_by_id.items():
+            cursor = mysql.cursor(dictionary=True)
+            cursor.execute("SELECT price, name FROM fruits WHERE id = %s", (fruit_id,))
+            # cursor.execute("SELECT price, name, exist FROM fruits WHERE id = %s", (fruit_id,))
+            fruit_data = cursor.fetchone()
+
+            if fruit_data:
+                price = fruit_data['price']
+                # if total_weight > fruit_data['exist']:
+                #     # fruit_out.append({'name':fruit_data['name']})
+                #     return jsonify(message="fruit name:"+fruit_data['name']+" Out of stock")
+                # else:
+                # fruit_data['exist']-=total_weight
+                cost = price * total_weight
+                rounded_cost = round(cost, 5)
+                total_price += cost
+                fruit_name = fruit_data['name']
+                fruit_costs.append({'name': fruit_name, 'cost': rounded_cost,'total weight':round(total_weight, 5),'price':price})
+                cursor.execute("INSERT INTO bill_detail (bill_id, fruit_id, weight,price) VALUES (%s, %s, %s, %s)",
+                               (bill_id, fruit_id, total_weight,price))
+
+            mysql.commit()
+        # mysql.close()
+        cursor.execute("INSERT INTO bill (bill_id,Date,user_id,total_cost) VALUES (%s, %s,%s,%s)", (bill_id,bill_date, user_id,total_price))
+        mysql.commit()
+        return jsonify(total_price=total_price, fruit_costs=fruit_costs)
     except Exception as e:
         return jsonify(error=str(e)), 400
 @app.route('/ViewBill/<int:bill_id>',methods=['GET'])
+@jwt_required()
 def view_bill(bill_id):
     try:
         cursor = mysql.cursor(dictionary=True)
@@ -273,6 +271,7 @@ def view_bill(bill_id):
         return jsonify(error=str(e)), 500
 
 @app.route('/Sales/',methods=['GET'])
+@jwt_required()
 def sales():
     try:
         fruit_sales = []
@@ -293,6 +292,7 @@ def sales():
         return jsonify(error=str(e)), 500
 #user_route
 @app.route('/Register', methods=['POST'])
+@jwt_required()
 def add():
     data = request.get_json()
 
@@ -346,58 +346,34 @@ def add():
 
 @app.route('/Login',methods=['POST'])
 def login():
-
     data = request.get_json()
-
     email = data['email']
-
     password = data['password']
-
     try:
-
-        if 'logged_in' in session and session['logged_in']:
-
-            return jsonify(message="You are already logged in")
-
         cursor = mysql.cursor(dictionary=True)
-
         cursor.execute("SELECT * FROM users WHERE email = %s", (email,))
-
         existing_user = cursor.fetchone()
-
         if existing_user == None:
-
             return jsonify(message="Cannot find email")
-
         user_id = existing_user['ID']
-
+        role = existing_user['Admin']
         existing_password = existing_user['password']
-
         if existing_user and bcrypt.checkpw(password.encode('utf-8'), existing_password.encode('utf-8')):
-
-            session['logged_in'] = True
-
-            session['id'] = user_id
-
-            role = existing_user['Admin']
-
-            session['Admin'] = role
-            response = jsonify(message='Login successfully', user_id=session['id'], role=session['Admin'])
-            # response.headers['Set-session'] = session.sid  # Thêm session ID vào header
-            return response
+            access_token = create_access_token(identity=user_id)
+            return jsonify(message='Login Successful', access_token=access_token,identity=user_id)
         else:
-            return jsonify(message="Password incorrect"), 201
-
+            return jsonify('Wrong Password'), 401
     except Exception as e:
-
         return jsonify({"error": str(e)})
 
 @app.route('/view',methods=['GET'])
+@jwt_required()
 def view():
     try:
-        if 'logged_in' in session and session['logged_in']:
+        identity = get_jwt_identity()
+        if identity is not None:
             cursor = mysql.cursor(dictionary=True)
-            cursor.execute("SELECT * FROM users WHERE ID = %s",(session['id'],))
+            cursor.execute("SELECT * FROM users WHERE ID = %s",(identity,))
             user = cursor.fetchone()
             cursor.close()
             return jsonify(user)
@@ -407,6 +383,7 @@ def view():
         return jsonify({"error": str(e)})
 
 @app.route('/logout',methods=['POST'])
+@jwt_required()
 def logout():
     try:
         if 'logged_in' in session and session['logged_in']:
@@ -417,6 +394,7 @@ def logout():
     except Exception as e:
         return jsonify(error=str(e)), 400
 @app.route('/update',methods=['POST'])
+@jwt_required()
 def update():
     data = request.get_json()
     email = data.get('email', '')
@@ -438,15 +416,12 @@ def update():
         return jsonify(message="Invalid birthdate format. Please use the format 'YYYY-MM-DD'")
 
     try:
-        if 'logged_in' in session and session['logged_in']:
-            cursor = mysql.cursor(dictionary=True)
-            cursor.execute(
-                "UPDATE users SET email=%s, password=%s, name=%s, phone=%s, address=%s, birth=%s, sex=%s, username=%s WHERE id=%s",
-                (email, hashed_password, name, phone, address, birthdate, sex, username, session['id']))
-
-            return jsonify(message="Update success")
-        else:
-            return jsonify(message="Please login")
+        id = get_jwt_identity()
+        cursor = mysql.cursor(dictionary=True)
+        cursor.execute(
+            "UPDATE users SET email=%s, password=%s, name=%s, phone=%s, address=%s, birth=%s, sex=%s, username=%s WHERE id=%s",
+            (email, hashed_password, name, phone, address, birthdate, sex, username, id))
+        return jsonify(message="Update success")
     except Exception as e:
         return jsonify({"error": str(e)})
 def get_id(role):
@@ -500,10 +475,12 @@ def get_id(role):
             return jsonify(error=str(e)), 400
     else:
         return jsonify(error="Invalid role")
-def check_role(user):
+def check_role(ID):
     try:
         cursor = mysql.cursor(dictionary=True)
-        if user['Admin'] == 0:
+        cursor.execute("SELECT Admin FROM users WHERE ID=%s",(ID,))
+        result = cursor.fetchone()
+        if result['Admin'] == 0:
             return False
         else:
             return True
