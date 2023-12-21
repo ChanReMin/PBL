@@ -1,7 +1,12 @@
+import os
+
 from flask import Flask, request, jsonify, session
 import mysql.connector
-from user_model import user
-from fruit_model import Fruit
+# from CameraWebServer import (capture, predict)
+# from Loadcell import (get_weight, Loadcell_WebSockets_URL)
+
+# from user_model import user
+# from fruit_model import Fruit
 from flask_cors import CORS
 import bcrypt
 import uuid
@@ -10,7 +15,8 @@ from flask_jwt_extended import JWTManager, jwt_required, get_jwt_identity
 
 from flask_jwt_extended import *
 from functools import wraps
-from datetime import datetime,date
+from datetime import datetime, date
+
 app = Flask(__name__)
 CORS(app)
 app.config['SECRET_KEY'] = 'chanremin'
@@ -25,7 +31,6 @@ mysql_config = {
 mysql = mysql.connector.connect(**mysql_config)
 cursor = mysql.cursor()
 jwt = JWTManager(app)
-
 # fruit route
 @app.route('/addFruit', methods=['POST'])
 @jwt_required()
@@ -36,10 +41,11 @@ def add_fruit():
     exist = data.get('exist', 0)
     image = data.get('image', '')
     price = data.get('price', 0.0)
+    id = get_fruit_id()
 
     try:
         identity = get_jwt_identity()
-        if check_role(user):
+        if check_role(identity):
             cursor = mysql.cursor(dictionary=True)
             cursor.execute("SELECT id FROM fruits WHERE name = %s", (name,))
             existing_fruit = cursor.fetchone()
@@ -47,8 +53,8 @@ def add_fruit():
                 cursor.close()
                 return jsonify({"message": "Fruit already exists. Please add a different one."})
             cursor.execute(
-                "INSERT INTO fruits (name, description, exist, image, price) VALUES (%s, %s, %s, %s, %s)",
-                (name, description, exist, image, price))
+                "INSERT INTO fruits (ID,name, description, exist, image, price) VALUES (%s, %s, %s, %s, %s,%s)",
+                (id,name, description, exist, image, price))
             mysql.commit()
             cursor.close()
             return jsonify({"message": "Fruit added successfully"}), 201
@@ -57,7 +63,7 @@ def add_fruit():
     except Exception as e:
         return jsonify({"error": str(e)})
 @app.route('/allFruits', methods=['GET'])
-@jwt_required()
+
 def show_fruits():
     try:
         cursor = mysql.cursor(dictionary=True)
@@ -97,7 +103,7 @@ def update_fruit(fruit_id):
         identity = get_jwt_identity()
         if check_role(identity):
             cursor = mysql.cursor(dictionary=True)
-            cursor.execute("SELECT * FROM users WHERE ID = %s", (session['id'],))
+            cursor.execute("SELECT * FROM users WHERE ID = %s", (identity,))
             user = cursor.fetchone()
             if check_role(user):
                 cursor = mysql.cursor(dictionary=True)
@@ -140,57 +146,25 @@ def view_fruit(fruit_id):
         return jsonify(fruit)
     except Exception as e:
         return jsonify(error=str(e)), 500
-@app.route('/calculate_price', methods=['POST'])
-def calculate_total_price():
-    try:
-        cursor = mysql.cursor(dictionary=True)
-        data = request.get_json()
-        total_price = 0
-        weight_by_id = {}
-
-        for item in data:
-            fruit_id = item["id"]
-            weight_kg = item["weight"]
-
-            if fruit_id in weight_by_id:
-                weight_by_id[fruit_id] += weight_kg
-            else:
-                weight_by_id[fruit_id] = weight_kg
-
-        for fruit_id, total_weight in weight_by_id.items():
-            query = "SELECT price FROM fruits WHERE id = %s"
-            cursor.execute(query, (fruit_id,))
-            price_data = cursor.fetchone()
-            if price_data:
-                price = price_data['price']
-                cost = price * total_weight
-                total_price += cost
-
-        cursor.close()
-        # mysql.close()
-
-        return jsonify(total_price=total_price)
-    except Exception as e:
-        return jsonify(error=str(e)), 400
-@app.route('/searchFruit/<string:fruit_name>',methods=['GET'])
+@app.route('/searchFruit/<string:fruit_name>', methods=['GET'])
 @jwt_required()
 def search_fruit(fruit_name):
     try:
         cursor = mysql.cursor(dictionary=True)
-        cursor.execute("SELECT * FROM fruits WHERE name = %s",(fruit_name,))
+        cursor.execute("SELECT * FROM fruits WHERE name = %s", (fruit_name,))
         fruit = cursor.fetchone()
         if fruit is None:
             cursor.close()
-            return jsonify({"message":"Fruit not found"}),404
+            return jsonify({"message": "Fruit not found"}), 404
         cursor.close()
         return jsonify(fruit)
     except Exception as e:
-        return jsonify(error=str(e)),500
-@app.route('/bill',methods=['POST'])
+        return jsonify(error=str(e)), 500
+@app.route('/bill', methods=['POST'])
 @jwt_required()
 def bill():
     try:
-        identity=get_jwt_identity()
+        identity = get_jwt_identity()
         cursor = mysql.cursor(dictionary=True)
         data = request.get_json()
         total_price = 0
@@ -202,7 +176,6 @@ def bill():
         # cursor.close()
         cursor.execute("SELECT MAX(bill_id) as max_id from bill")
         max_id = cursor.fetchone()
-        print(max_id['max_id'])
         if not max_id['max_id']:
             bill_id = 1
         else:
@@ -234,24 +207,27 @@ def bill():
                 rounded_cost = round(cost, 5)
                 total_price += cost
                 fruit_name = fruit_data['name']
-                fruit_costs.append({'name': fruit_name, 'cost': rounded_cost,'total weight':round(total_weight, 5),'price':price})
+                fruit_costs.append(
+                    {'name': fruit_name, 'cost': rounded_cost, 'total weight': round(total_weight, 5), 'price': price})
                 cursor.execute("INSERT INTO bill_detail (bill_id, fruit_id, weight,price) VALUES (%s, %s, %s, %s)",
-                               (bill_id, fruit_id, total_weight,price))
+                               (bill_id, fruit_id, total_weight, price))
 
             mysql.commit()
         # mysql.close()
-        cursor.execute("INSERT INTO bill (bill_id,Date,user_id,total_cost) VALUES (%s, %s,%s,%s)", (bill_id,bill_date, user_id,total_price))
+        cursor.execute("INSERT INTO bill (bill_id,Date,user_id,total_cost) VALUES (%s, %s,%s,%s)",
+                       (bill_id, bill_date, user_id, total_price))
         mysql.commit()
         return jsonify(total_price=total_price, fruit_costs=fruit_costs)
     except Exception as e:
         return jsonify(error=str(e)), 400
-@app.route('/ViewBill/<int:bill_id>',methods=['GET'])
+@app.route('/ViewBill/<int:bill_id>', methods=['GET'])
 @jwt_required()
 def view_bill(bill_id):
     try:
         cursor = mysql.cursor(dictionary=True)
-        query="""
-        SELECT bill.Date,bill.user_id,users.name,bill_detail.weight,fruits.price,fruits.name 
+        query = """
+        SELECT bill.Date,bill.user_id,users.name,bill_detail.weight,fruits.price,fruits.name , 
+                bill_detail.weight*bill_detail.price AS cost
         FROM bill 
         JOIN users 
         ON bill.user_id = users.ID 
@@ -262,15 +238,30 @@ def view_bill(bill_id):
         WHERE bill_detail.bill_id = %s"""
         cursor.execute(query, (bill_id,))
         bill = cursor.fetchall()
+
+        query2 = """SELECT SUM( bill_detail.weight*bill_detail.price)  AS cost FROM bill_detail WHERE bill_detail.bill_id = %s"""
+        cursor.execute(query2,(bill_id,))
+        result = cursor.fetchone()
+
+
         if not bill:
             cursor.close()
             return jsonify({"message": "Bill not found"}), 404
         cursor.close()
-        return jsonify(bill)
+        return jsonify(bill=bill,total_price=round(result['cost'],3))
     except Exception as e:
         return jsonify(error=str(e)), 500
-
-@app.route('/Sales/',methods=['GET'])
+@app.route('/ViewAllBill',methods=['GET'])
+@jwt_required()
+def view_all_bill():
+    try:
+        cursor = mysql.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM bill")
+        result=cursor.fetchall()
+        return (result)
+    except Exception as e:
+        return jsonify(error=str(e)), 500
+@app.route('/Sales/', methods=['GET'])
 @jwt_required()
 def sales():
     try:
@@ -290,31 +281,22 @@ def sales():
         return (fruit_sales)
     except Exception as e:
         return jsonify(error=str(e)), 500
-#user_route
+# user_route
 @app.route('/Register', methods=['POST'])
 @jwt_required()
 def add():
     data = request.get_json()
-
     email = data['email']
-
     password = data['password']
 
-    salt=bcrypt.gensalt()
-    hashed_password = bcrypt.hashpw(password.encode('utf-8'),salt)
+    salt = bcrypt.gensalt()
+    hashed_password = bcrypt.hashpw(password.encode('utf-8'), salt)
     role = data['role']
     id = get_id(role)
 
-    name = data.get('name','')
-    phone = data.get('phone','')
-    # address = data.get('address','')
-    # birth = data.get('birth','')
-    # sex = data.get('sex','')
-    # username = data.get('username','')
-    # try:
-    #     birthdate = datetime.strptime(birth, "%Y-%m-%d").date()
-    # except ValueError:
-    #     return jsonify(message="Invalid birthdate format. Please use the format 'YYYY-MM-DD'")
+    name = data.get('name', '')
+    phone = data.get('phone', '')
+
     try:
         cursor = mysql.cursor(dictionary=True)
         cursor.execute("SELECT email FROM users WHERE email = %s", (email,))
@@ -325,26 +307,19 @@ def add():
             return jsonify(message="User already exists. Please add a different one.")
 
         cursor.execute(
-            "INSERT INTO users (id,email,password,name,phone,admin) VALUES (%s, %s, %s, %s, %s,%s)",
-            (id, email, hashed_password, name, phone,role))
+            "INSERT INTO users (id, email, password, name, phone, admin, address) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            (id, email, hashed_password, name, phone, role, data.get('address', '')))
         mysql.commit()
         cursor.close()
 
-
-        # cursor.execute(
-        #     "INSERT INTO users (id,email,password,name,phone,address,birthdate,sex,username) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
-        #     (id,email,hashed_password,name,phone,address,birth,sex,username))
-        # mysql.commit()
-        # cursor.close()
-
-        if role==0:
+        if role == 0:
             return jsonify(message="User registered successfully"), 201
         elif role == 1:
-            return jsonify(message="Admin registered successfully"),201
+            return jsonify(message="Admin registered successfully"), 201
     except Exception as e:
         return jsonify({"error": str(e)})
 
-@app.route('/Login',methods=['POST'])
+@app.route('/Login', methods=['POST'])
 def login():
     data = request.get_json()
     email = data['email']
@@ -360,20 +335,19 @@ def login():
         existing_password = existing_user['password']
         if existing_user and bcrypt.checkpw(password.encode('utf-8'), existing_password.encode('utf-8')):
             access_token = create_access_token(identity=user_id)
-            return jsonify(message='Login Successful', access_token=access_token,identity=user_id)
+            return jsonify(message='Login Successful', access_token=access_token, identity=user_id)
         else:
             return jsonify('Wrong Password'), 401
     except Exception as e:
         return jsonify({"error": str(e)})
-
-@app.route('/view',methods=['GET'])
+@app.route('/view', methods=['GET'])
 @jwt_required()
 def view():
     try:
         identity = get_jwt_identity()
         if identity is not None:
             cursor = mysql.cursor(dictionary=True)
-            cursor.execute("SELECT * FROM users WHERE ID = %s",(identity,))
+            cursor.execute("SELECT * FROM users WHERE ID = %s", (identity,))
             user = cursor.fetchone()
             cursor.close()
             return jsonify(user)
@@ -381,34 +355,35 @@ def view():
             return jsonify(message="Please login")
     except Exception as e:
         return jsonify({"error": str(e)})
-
-@app.route('/logout',methods=['POST'])
+@app.route('/ViewAll', methods=['GET'])
 @jwt_required()
-def logout():
+def view_all():
     try:
-        if 'logged_in' in session and session['logged_in']:
-            session.clear()
-            return jsonify(message='Logout successful')
+        identity = get_jwt_identity()
+        if check_role(identity):
+            cursor = mysql.cursor(dictionary=True)
+            cursor.execute("SELECT * FROM users")
+            result = cursor.fetchall()
+            cursor.close()
+            return jsonify(result)
         else:
-            return jsonify(message='Please login first')
+            return jsonify(message="Unauthorized route")
     except Exception as e:
-        return jsonify(error=str(e)), 400
-@app.route('/update',methods=['POST'])
+        return jsonify({"error": str(e)})
+@app.route('/update', methods=['PUT'])
 @jwt_required()
 def update():
     data = request.get_json()
     email = data.get('email', '')
-
     password = data['password']
     salt = bcrypt.gensalt()
     hashed_password = bcrypt.hashpw(password.encode('utf-8'), salt)
-
     name = data.get('name', '')
     phone = data.get('phone', '')
     address = data.get('address', '')
     birth = data.get('birth', '')
     sex = data.get('sex', '')
-    username = data.get('username', '')
+
 
     try:
         birthdate = datetime.strptime(birth, "%Y-%m-%d").date()
@@ -419,11 +394,37 @@ def update():
         id = get_jwt_identity()
         cursor = mysql.cursor(dictionary=True)
         cursor.execute(
-            "UPDATE users SET email=%s, password=%s, name=%s, phone=%s, address=%s, birth=%s, sex=%s, username=%s WHERE id=%s",
-            (email, hashed_password, name, phone, address, birthdate, sex, username, id))
+            "UPDATE users SET email=%s, password=%s, name=%s, phone=%s, address=%s, birth=%s, sex=%s WHERE id=%s",
+            (email, hashed_password, name, phone, address, birthdate, sex, id))
         return jsonify(message="Update success")
     except Exception as e:
         return jsonify({"error": str(e)})
+@app.route('/getWeight', methods=['GET'])
+def getWEIGHT():
+    return jsonify({"weight":round(get_weight.get_weight(Loadcell_WebSockets_URL) / 1000, 3)})
+@app.route('/getID',methods=['GET'])
+def getID():
+    capture_path = capture.capture()
+    img_path, label_path = predict.predict(capture_path)
+    # label_path = r"D:\PBL\W-P_BE\WebServer\capture_predict\predicts\2023.11.14\2.txt"
+    if os.path.exists(label_path):
+        label_file = open(label_path)
+        content = list(label_file)
+        label_file.close()
+        labels = []
+        for label in content:
+            labels.append(label.split()[0])
+
+        if labels.count(labels[0]) != len(labels):
+            return jsonify(message="Too much fruits!")
+        else:
+            id = labels[0]
+            cursor = mysql.cursor(dictionary=True)
+            cursor.execute("SELECT ID,name,price FROM fruits WHERE ID = %s", (id,))
+            result=cursor.fetchone()
+            return jsonify(result)
+    else:
+        return jsonify(message="Fruit not Found!")
 def get_id(role):
     if role == 0:
         try:
@@ -478,7 +479,7 @@ def get_id(role):
 def check_role(ID):
     try:
         cursor = mysql.cursor(dictionary=True)
-        cursor.execute("SELECT Admin FROM users WHERE ID=%s",(ID,))
+        cursor.execute("SELECT Admin FROM users WHERE ID=%s", (ID,))
         result = cursor.fetchone()
         if result['Admin'] == 0:
             return False
@@ -487,6 +488,23 @@ def check_role(ID):
     except Exception as e:
         return jsonify(error=str(e)), 400
 
+def get_fruit_id():
+    try:
+        cursor = mysql.cursor(dictionary=True)
+        cursor.execute("SELECT MAX(ID) FROM fruits")
+        result = cursor.fetchone()
+        max_id = result['MAX(ID)']
+        if max_id:
+            id = max_id + 1
+        else:
+            id = 0
+        cursor.execute("SELECT ID FROM fruits WHERE ID = %s", (id,))
+        existing_id = cursor.fetchone()
+        cursor.close()
+        return id
+    except Exception as e:
+        return jsonify(error=str(e)), 400
 if __name__ == '__main__':
     from waitress import serve
+    # app.run(debug=False)
     serve(app, host="0.0.0.0", port=8080)
