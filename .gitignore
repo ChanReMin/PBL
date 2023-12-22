@@ -1,0 +1,10 @@
+_pycache_/
+
+# Bỏ qua thư mục CameraWebServer
+CameraWebServer/
+
+# Bỏ qua thư mục Loadcell
+Loadcell/
+
+# Bỏ qua thư mục WebServer
+WebServer/
