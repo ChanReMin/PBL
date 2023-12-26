@@ -1,9 +1,9 @@
 import os
 
 import flask
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 import mysql.connector
-from CameraWebServer import (capture, predict)
+from CameraWebServer import (capture, predict, CAPTURE_URL)
 from Loadcell import (get_weight, Loadcell_WebSockets_URL)
 
 # from user_model import user
@@ -18,7 +18,7 @@ from flask_jwt_extended import *
 from functools import wraps
 from datetime import datetime, date
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder=os.path.join('CameraWebServer', 'predicts'), static_url_path='')
 CORS(app)
 app.config['SECRET_KEY'] = 'chanremin'
 app.config['SESSION_TYPE'] = 'filesystem'
@@ -34,6 +34,9 @@ mysql = mysql.connector.connect(**mysql_config)
 cursor = mysql.cursor()
 jwt = JWTManager(app)
 
+@app.route('/image/<path:path>')
+def static_image(path):
+    return send_from_directory(os.path.join('CameraWebServer', 'predicts'), path)
 
 # fruit route
 @app.route('/addFruit', methods=['POST'])
@@ -192,7 +195,7 @@ def bill():
             bill_id = max_id['max_id']
             bill_id += 1
         for item in data:
-            fruit_id = item['id']
+            fruit_id = item['ID']
             weight_kg = item['weight']
 
             if fruit_id in weight_by_id:
@@ -420,9 +423,8 @@ def view_all():
 def update():
     data = request.get_json()
     email = data.get('email', '')
-    password = data['password']
-    salt = bcrypt.gensalt()
-    hashed_password = bcrypt.hashpw(password.encode('utf-8'), salt)
+
+
     name = data.get('name', '')
     phone = data.get('phone', '')
     address = data.get('address', '')
@@ -430,27 +432,25 @@ def update():
     sex = data.get('sex', '')
     username = data.get('username', '')
 
-    try:
-        birthdate = datetime.strptime(birth, "%Y-%m-%d").date()
-    except ValueError:
-        return jsonify(message="Invalid birthdate format. Please use the format 'YYYY-MM-DD'")
+    # try:
+    #     birthdate = datetime.strptime(birth, "%Y-%m-%d").date()
+    # except ValueError:
+    #     return jsonify(message="Invalid birthdate format. Please use the format 'YYYY-MM-DD'")
 
     try:
         id = get_jwt_identity()
         cursor = mysql.cursor(dictionary=True)
         cursor.execute(
-            "UPDATE users SET email=%s, password=%s, name=%s, phone=%s, address=%s, birth=%s, sex=%s, username=%s WHERE id=%s",
-            (email, hashed_password, name, phone, address, birthdate, sex, username, id))
+            "UPDATE users SET email=%s,  name=%s, phone=%s, address=%s, birth=%s, sex=%s, username=%s WHERE id=%s",
+            (email,  name, phone, address, birth, sex, username, id))
         return jsonify(message="Update success")
     except Exception as e:
         return jsonify({"error": str(e)})
 
-@app.route("/BanAcc", methods=["PUT"])
+@app.route("/BanAcc/<string:banID>", methods=["PUT"])
 @jwt_required()
-def BanAcc():
+def BanAcc(banID):
     try:
-        data = request.get_json()
-        banID = data['ID']
         ID = get_jwt_identity()
         if check_role(ID):
             cursor = mysql.cursor(dictionary=True)
@@ -461,16 +461,14 @@ def BanAcc():
     except Exception as e:
         return jsonify({"error": str(e)})
 
-@app.route("/ActiveAcc", methods=["PUT"])
+@app.route("/ActiveAcc/<string:actID>", methods=["PUT"])
 @jwt_required()
-def ActiveAcc():
+def ActiveAcc(actID):
     try:
-        data = request.get_json()
-        banID = data['ID']
         ID = get_jwt_identity()
         if check_role(ID):
             cursor = mysql.cursor(dictionary=True)
-            cursor.execute("UPDATE users SET valid=%s WHERE id=%s", (1, banID))
+            cursor.execute("UPDATE users SET valid=%s WHERE id=%s", (1, actID))
             return jsonify(message="Account activated")
         else:
             return jsonify(message="Invalid route")
@@ -484,11 +482,11 @@ def getWEIGHT():
 
 @app.route('/getID', methods=['GET'])
 def getID():
-    # capture_path = capture.capture(CAPTURE_URL)
-    capture_path = "D:/123.jpg"
-    img_path, label_path = predict.predict(capture_path)
+    capture_path = capture.capture(CAPTURE_URL)
+    # capture_path = "D:/123.jpg"
+    img_path, label_path = predict.predict(capture_path, device="0")
     # label_path = r"D:\PBL\W-P_BE\WebServer\capture_predict\predicts\2023.11.14\2.txt"
-    if os.path.exists(label_path):
+    if label_path and os.path.exists(label_path):
         label_file = open(label_path)
         content = list(label_file)
         label_file.close()
@@ -508,14 +506,16 @@ def getID():
         return jsonify(message="Fruit not Found!")
 
 
-# import base64
-# def getImage(capture_path):
-#     with open(capture_path, "rb") as f:
-#         image_data = f.read()
-#     return base64.b64encode(image_data).decode("utf-8")
+import base64
+def getImage(capture_path):
+    with open(capture_path, "rb") as f:
+        image_data = f.read()
+    return base64.b64encode(image_data).decode("utf-8")
 
 @app.route("/getImage", methods=["POST"])
 def getImage():
+    print('Hi')
+    print(request)
     return flask.send_file(request.json.get("image_path"), mimetype="image")
 
 def get_id(role):
