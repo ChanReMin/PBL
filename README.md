@@ -4,36 +4,15 @@ This is a Flask app with an API layer. It has the following properties:
     1. Fruit
     2. User
     3. Admin
-2. Each user can 
-3. A subject is taught by one teacher
-4. It has endpoints to CREATE, UPDATE, and DELETE each entity in the application
-5. Only an authorized user can access the endpoints
+2. Each user can create a bill to calculate fruit price
+3. Admin can edit,update, delete, add new fruit to the database
+4. User can view bill
 
 ## Installation and Set Up
-
-Navigate to the root folder:
-```
-cd flask-student-api
-```
 
 Install the required packages:
 ```
 pip install -r requirements.txt
-```
-
-Create a `.env` file with the following keys:
-```
-SECRET_KEY
-DATABASE_URI - for SQLAlchemy
-TEST_DATABASE_URI - for SQLAlchemy
-ENVIRONMENT - this is either production or development
-```
-
-Initialize, migrate, and upgrade the database:
-```
-python manage.py db init
-python manage.py db migrate
-python manage.py db upgrade
 ```
 
 ## Launching the Program
