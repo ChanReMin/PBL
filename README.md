@@ -1,4 +1,4 @@
-# Fruit App and API
+# Fruit API
 This is a Flask app with an API layer. It has the following properties:
 1. It has the following relational entities:
     1. Fruit
